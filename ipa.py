@@ -7,6 +7,9 @@ import time
 from optparse import OptionParser
 import subprocess
 import requests
+import smtplib
+from email.mime.text import MIMEText
+from email.header import Header
 
 projectPath = ''
 projectName = ''
@@ -14,7 +17,12 @@ tempFinder = None
 timeFile = None
 IPAPath = None
 methodType = None
-
+downUrl = None
+sender = 'xiangwei_zd@163.com'
+receiver = '956881157@qq.com'
+smtpserver = 'smtp.163.com'
+username = 'xiangwei_zd@163.com'
+password = 'xw900224'
 #证书  目前只支持企业账号打包
 CODE_SIGN_IDENTITY = "iPhone Distribution: Weily Interactive Technology Co., Ltd."
 
@@ -48,30 +56,6 @@ def cdDir():
     except Exception as e:
         print 'catch exception:%s' % e
         exit(1)
-
-def parserUploadResult(jsonResult):
-    resultCode = jsonResult['code']
-    if resultCode == 0:
-        downUrl = DOWNLOAD_BASE_URL +"/"+jsonResult['data']['appShortcutUrl']
-        print "Upload Success"
-        print "DownUrl is:" + downUrl
-    else:
-        print "Upload Fail!"
-        print "Reason:"+jsonResult['message']
-
-def uploadIpaToPgyer():
-    global IPAPath
-    print "ipaPath:",IPAPath
-    files = {'file': open(IPAPath, 'rb')}
-    headers = {'enctype':'multipart/form-data'}
-    payload = {'uKey':USER_KEY,'_api_key':API_KEY,'publishRange':'2','isPublishToPublic':'2', 'password':'123'}
-    print "uploading...."
-    r = requests.post(PGYER_UPLOAD_URL, data = payload ,files=files,headers=headers)
-    if r.status_code == requests.codes.ok:
-        result = r.json()
-        parserUploadResult(result)
-    else:
-        print 'HTTPError,Code:'+r.status_code
 
 def reatIPAFinder():
     global timeFile
@@ -128,6 +112,63 @@ def cerateProjectIpa():
     IPAPath = projectPath + '/' + tempFinder + '/' + projectName + '.ipa'
     return
 
+
+def sendEmailToTester():
+    global sender
+    global receiver
+    global smtpserver
+#    global downUrl
+    msg = MIMEText('张浩，你好','text','utf-8')
+    msg['to'] = receiver
+    msg['from'] = sender
+    msg['subject'] = '新的测试包已经上传 请下载测试'
+    try:
+        server = smtplib.SMTP()
+        server.connect('smtp.163.com')
+        server.login('xiangwei_zd@163.com','xw900224')
+        server.sendmail(msg['from'], msg['to'],msg.as_string())
+        server.quit()
+        print '发送成功'
+    except Exception, e:
+        print str(e)
+
+def parserUploadResult(jsonResult):
+    global DOWNLOAD_BASE_URL
+    global downUrl
+    resultCode = jsonResult['code']
+    if resultCode == 0:
+        downUrl = DOWNLOAD_BASE_URL +"/"+jsonResult['data']['appShortcutUrl']
+        print "Upload Success"
+        print "DownUrl is:" + downUrl
+    else:
+        print "Upload Fail!"
+        print "Reason:"+jsonResult['message']
+
+def uploadIpaToPgyer():
+    global IPAPath
+    global USER_KEY
+    global API_KEY
+    global PGYER_UPLOAD_URL
+    print "ipaPath:",IPAPath
+    files = {'file': open(IPAPath, 'rb')}
+    headers = {'enctype':'multipart/form-data'}
+    payload = {'uKey':USER_KEY,'_api_key':API_KEY,'publishRange':'2','isPublishToPublic':'2', 'password':'123'}
+    print "uploading...."
+    r = requests.post(PGYER_UPLOAD_URL, data = payload ,files=files,headers=headers)
+    if r.status_code == requests.codes.ok:
+        result = r.json()
+        parserUploadResult(result)
+    else:
+        print 'HTTPError,Code:'+r.status_code
+def judgeUploadToPgyerSuccess():
+    global downUrl
+    if len(downUrl) > 20:
+        print "上传成功"
+        sendEmailToTester()
+    else:
+        print "上传失败"
+    return
+
 def choosePackageApplicationMethod():
     cdDir()
     reatIPAFinder()
@@ -140,7 +181,7 @@ def choosePackageApplicationMethod():
         creatProkectApp()
         cerateProjectIpa()
     uploadIpaToPgyer()
-
+    judgeUploadToPgyerSuccess()
 
 if __name__ == '__main__':
     choosePackageApplicationMethod()
