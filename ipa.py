@@ -1,51 +1,72 @@
 #!usr/bin/python
 # coding=utf-8
 
+import optparse
 import os
 import sys
+import getpass
+import json
 import time
 from optparse import OptionParser
 import subprocess
 import requests
 import smtplib
-from email.mime.text import MIMEText
+from email import encoders
 from email.header import Header
+from email.mime.text import MIMEText
+from email.utils import parseaddr, formataddr
 
+#配置文件路径
+commendPath = "/Users/" + getpass.getuser() + "/"
+commendFinderName = ".ipa_build_py"
+commendFullPath = commendPath + commendFinderName
+configFileName = "ipaBuildPyConfigFile.json"
+commendFilePath = commendFullPath + "/" + configFileName
+
+#工程路径
 projectPath = ''
-projectName = ''
+#工程名
+projectName = None
+#时间文件夹
 tempFinder = None
+#时间格式
 timeFile = None
+#生成的ipa包路径
 IPAPath = None
+# 工程类型
 methodType = None
+#下载地址
 downUrl = None
-sender = 'xiangwei_zd@163.com'
-receiver = '956881157@qq.com'
-smtpserver = 'smtp.163.com'
-username = 'xiangwei_zd@163.com'
-password = 'xw900224'
+# 邮件发送者
+emailFromUser = None
+# 邮件接收者
+emailToUser = None
+# 服务器地址
+smtpserver = None
+
+contentText = None
+
+# 授权密码
+emailPassword = None
 #证书  目前只支持企业账号打包
-CODE_SIGN_IDENTITY = "iPhone Distribution: Weily Interactive Technology Co., Ltd."
+CODE_SIGN_IDENTITY = "iPhone Distribution: xxxxxx, Ltd."
 
 # 蒲公英内侧平台配置信息
 PGYER_UPLOAD_URL = "http://www.pgyer.com/apiv1/app/upload"
 DOWNLOAD_BASE_URL = "http://www.pgyer.com"
 #userkey 和apikey 在个人信息里面找到修改成你的信息
-USER_KEY = "0cdecee7a8baa0d6ea95e25ef12b8337"
-API_KEY = "32d956c50ee40525e665d73adf08fd59"
+USER_KEY = None
+API_KEY = None
 
 #进入当前工程路径
 def cdDir():
     global projectPath
     global projectName
     global methodType
-    argv = sys.argv
-    count = len(argv)
-    if count < 3:
+    if not projectName:
         projectName = raw_input('please input projectName:')
+    if not methodType:
         methodType = raw_input('please input methodType:')
-    else:
-        projectName = argv[1]
-        methodType = argv[2]
     curdir = os.getcwd()
     projectPath = curdir + os.sep + projectName
     while not os.path.exists(projectPath):
@@ -56,6 +77,162 @@ def cdDir():
     except Exception as e:
         print 'catch exception:%s' % e
         exit(1)
+
+
+# 显示已有的参数
+def showParameter():
+    print "projectName                 :%s" % projectName
+    print "methodType                    :%s" % methodType
+    print "emailFromUser            :%s" % emailFromUser
+    print "emailToUser                   :%s" % emailToUser
+    print "emailPassword              :%s" % emailPassword
+    print "smtpserver                :%s" % smtpserver
+    print "USER_KEY              :%s" % USER_KEY
+    print "API_KEY                  :%s" % API_KEY
+
+# 设置参数
+def setParameter():
+    global projectName
+    global methodType
+    global emailFromUser
+    global emailToUser
+    global emailPassword
+    global smtpserver
+    global USER_KEY
+    global API_KEY
+    projectName = raw_input("input projectName:")
+    methodType = raw_input("input methodType:")
+    emailFromUser = raw_input("input emailFromUser:")
+    emailToUser = raw_input("input emailToUser:")
+    emailPassword = raw_input("input emailPassword:")
+    smtpserver = raw_input("input smtpserver:")
+    USER_KEY = raw_input("input USER_KEY:")
+    API_KEY = raw_input("input API_KEY:")
+    # 保存到本地
+    writeJsonFile()
+
+
+# 判断字符串是否为空
+def isNone(para):
+    if para == None or len(para) == 0:
+        return True
+    else:
+        return False
+
+
+# 是否需要设置参数
+def isNeedSetParameter():
+    if isNone(projectName) or isNone(methodType) or isNone(smtpserver) or isNone(USER_KEY) or isNone(
+            emailFromUser) or isNone(emailToUser) or isNone(emailPassword) or isNone(API_KEY):
+        return True
+    else:
+        return False
+
+
+# 参数设置
+def setOptparse():
+    p = optparse.OptionParser()
+    # 参数配置指令
+    p.add_option("--config", "-c", action="store_true", default=None, help="config User's data")
+    options, arguments = p.parse_args()
+    # 配置信息
+    if options.config == True and len(arguments) == 0:
+        configMethod()
+
+#配置信息
+def configMethod():
+    os.system("clear")
+    readJsonFile()
+    print "您的参数如下:"
+    print "************************************"
+    showParameter()
+    print "************************************"
+    setParameter()
+    sys.exit()
+
+
+#设置配置文件路径
+def createFinder():
+    #没有文件夹，创建文件夹
+    if not os.path.exists(commendPath + commendFinderName):
+        os.system("cd %s;mkdir %s"%(commendPath,commendFinderName))
+    #没有文件，创建文件
+    if not os.path.isfile(commendFilePath):
+        os.system("cd %s;touch %s"%(commendFullPath,configFileName))
+        initJsonFile()
+    return
+
+
+# 初始化json配置文件
+def initJsonFile():
+    fout = open(commendFilePath, 'w')
+    js = {}
+    js["projectName"] = None
+    js["methodType"] = None
+    js["smtpserver"] = None
+    js["emailFromUser"] = None
+    js["emailToUser"] = None
+    js["emailPassword"] = None
+    js["USER_KEY"] = None
+    js["API_KEY"] = None
+    outStr = json.dumps(js, ensure_ascii=False)
+    fout.write(outStr.strip().encode('utf-8') + '\n')
+    fout.close()
+
+
+# 读取json文件
+def readJsonFile():
+    fin = open(commendFilePath, 'r')
+    for eachLine in fin:
+        line = eachLine.strip().decode('utf-8')
+        line = line.strip(',')
+        js = None
+        try:
+            js = json.loads(line)
+            global projectName
+            global methodType
+            global USER_KEY
+            global API_KEY
+            global smtpserver
+            global emailFromUser
+            global emailToUser
+            global emailPassword
+            projectName = js["projectName"]
+            methodType = js["methodType"]
+            USER_KEY = js["USER_KEY"]
+            API_KEY = js["API_KEY"]
+            emailFromUser = js["emailFromUser"]
+            emailToUser = js["emailToUser"]
+            emailPassword = js["emailPassword"]
+            smtpserver = js["smtpserver"]
+        except Exception, e:
+            print Exception
+            print e
+            continue
+    fin.close()
+
+
+# 写json文件
+def writeJsonFile():
+    showParameter()
+    try:
+        fout = open(commendFilePath, 'w')
+        js = {}
+        js["projectName"] = projectName
+        js["methodType"] = methodType
+        js["smtpserver"] = smtpserver
+        js["emailFromUser"] = emailFromUser
+        js["emailToUser"] = emailToUser
+        js["emailPassword"] = emailPassword
+        js["API_KEY"] = API_KEY
+        js["USER_KEY"] = USER_KEY
+        outStr = json.dumps(js, ensure_ascii=False)
+        fout.write(outStr.strip().encode('utf-8') + '\n')
+        fout.close()
+    except Exception, e:
+        print Exception
+        print e
+
 
 def reatIPAFinder():
     global timeFile
@@ -112,21 +289,32 @@ def cerateProjectIpa():
     IPAPath = projectPath + '/' + tempFinder + '/' + projectName + '.ipa'
     return
 
+def format_addr(s):
+    name, addr = parseaddr(s)
+    return formataddr((Header(name, 'utf-8').encode(), addr))
 
 def sendEmailToTester():
-    global sender
-    global receiver
+    global emailFromUser
+    global emailToUser
+    global emailPassword
     global smtpserver
-#    global downUrl
-    msg = MIMEText('张浩，你好','text','utf-8')
-    msg['to'] = receiver
-    msg['from'] = sender
-    msg['subject'] = '新的测试包已经上传 请下载测试'
+    global downUrl
+    global contentText
+#    msg = MIMEText('张浩你好，新的测试包已上传，请测试', 'text', 'utf-8')
+    textCotnent = '<html><body><h1>Hello,zhangHao</h1><p>send by <a href="' + downUrl + '">tianyanAR</a>...</p></body></html>'
+        
+    print "contentText : ",contentText
+    msg = MIMEText(textCotnent, 'html', 'utf-8')
+#    msg['From'] = _format_addr('IOS开发者 <%s>' % emailFromUser)
+#    msg['To'] = _format_addr('管理员 <%s>' % emailToUser)
+    msg['From'] = emailFromUser
+    msg['To'] = emailToUser
+    msg['Subject'] = Header('测试包更新了', 'utf-8').encode()
     try:
-        server = smtplib.SMTP()
-        server.connect('smtp.163.com')
-        server.login('xiangwei_zd@163.com','xw900224')
-        server.sendmail(msg['from'], msg['to'],msg.as_string())
+        server = smtplib.SMTP(smtpserver, 25)
+        server.set_debuglevel(1)
+        server.login(emailFromUser, emailPassword)
+        server.sendmail(msg['From'], msg['To'], msg.as_string())
         server.quit()
         print '发送成功'
     except Exception, e:
@@ -170,6 +358,17 @@ def judgeUploadToPgyerSuccess():
     return
 
 def choosePackageApplicationMethod():
+    # 设置配置文件路径
+    createFinder()
+    # 参数设置
+    setOptparse()
+    # 读取json文件
+    readJsonFile()
+    # 是否需要设置参数
+    if isNeedSetParameter():
+        print "您需要设置参数,您的参数如下(使用 --config 或者 -c):"
+        showParameter()
+        sys.exit()
     cdDir()
     reatIPAFinder()
     if methodType == "workspace":
